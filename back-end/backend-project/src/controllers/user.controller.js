@@ -8,9 +8,9 @@ import { response } from "express";
 const genrateAccessAndRefreshTokens = async (userId) => {
   try {
     const user = await User.findById(userId);
-    const accessToken = user.genrateAccessToken();
-    const refreshToken = user.genrateRefreshToken();
-    user.refreshToken(refreshToken);
+    const accessToken = await user.generateAccessToken();
+    const refreshToken = await user.generateRefreshToken();
+    user.refreshToken = refreshToken;
     await user.save({ validateBeforeSave: false });
 
     return { accessToken, refreshToken };
@@ -105,8 +105,9 @@ const loginUser = asyncHandler(async (req, res) => {
   //send cookie
 
   const { username, email, password } = req.body;
+  console.log(username, email);
 
-  if (!username || !password) {
+  if (!(username || email)) {
     throw new ApiError(400, "username or password is required");
   }
 
@@ -151,7 +152,7 @@ const loginUser = asyncHandler(async (req, res) => {
     );
 });
 
-const logoutUser = asyncHandler(async, (req, res) => {
+const logoutUser = asyncHandler(async (req, res) => {
   //take data from body
   //unset the refresh and access token
 
@@ -178,5 +179,4 @@ const logoutUser = asyncHandler(async, (req, res) => {
     .clearCookie("refreshToken", options)
     .json(new ApiResponse(200, {}, "User logged out successfully"));
 });
-
 export { registerUser, loginUser, logoutUser };
