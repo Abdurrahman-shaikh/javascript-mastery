@@ -5,6 +5,23 @@ import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { response } from "express";
 
+const genrateAccessAndRefreshTokens = async (userId) => {
+  try {
+    const user = await User.findById(userId);
+    const accessToken = user.genrateAccessToken();
+    const refreshToken = user.genrateRefreshToken();
+    user.refreshToken(refreshToken);
+    await user.save({ validateBeforeSave: false });
+
+    return { accessToken, refreshToken };
+  } catch (error) {
+    throw new ApiError(
+      500,
+      "Something went wrong while genrating the access and refresh token"
+    );
+  }
+};
+
 const registerUser = asyncHandler(async (req, res) => {
   //take the input from user in jason format
   //varify if the data in the correct format
@@ -27,7 +44,7 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(400, "All fields are required");
   }
 
-  const existedUser = User.findOne({
+  const existedUser = await User.findOne({
     $or: [{ username }, { email }],
   });
 
@@ -36,31 +53,40 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 
   const avtarLocalPath = req.files?.avatar[0]?.path;
-  const coverImageLocalPath = req.files?.coverImage[0]?.coverImage[0]?.path;
+  //let coverImageLocalPath = req.files?.coverImage[0]?.path;
+  let coverImageLocalPath;
+
+  if (
+    req.files &&
+    Array.isArray(req.files.coverImage) &&
+    req.files.coverImage.length > 0
+  ) {
+    coverImageLocalPath = req.files.coverImage[0].path;
+  }
 
   if (!avtarLocalPath) {
-    throw new ApiError(400, "Avtar file is required");
+    throw new ApiError(400, "avatar file is required");
   }
 
-  const avtar = await uploadOnCloudinary(avtarLocalPath);
+  const avatar = await uploadOnCloudinary(avtarLocalPath);
   const coverImage = await uploadOnCloudinary(coverImageLocalPath);
 
-  if (!avtar) {
-    throw new ApiError(400, "Avtar file is required");
+  if (!avatar) {
+    throw new ApiError(400, "avatar file is required");
   }
 
-  const user = User.create({
+  const user = await User.create({
     fullName,
-    avtar: avtar.url,
+    avatar: avatar.url,
     coverImage: coverImage?.url || "",
     email,
     password,
     username: username.toLowerCase(),
   });
 
-  const createdUser = await user
-    .findById(user._id)
-    .select("-password -refreshtoken");
+  const createdUser = await User.findById(user._id).select(
+    "-password -refreshtoken"
+  );
   console.log(createdUser);
 
   if (!createdUser) {
@@ -72,4 +98,62 @@ const registerUser = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, createdUser, "User registerd successfully"));
 });
 
-export { registerUser };
+const loginUser = asyncHandler(async (req, res) => {
+  //take the data  from request body
+  //find the user(email) || (username)
+  //varify the passord-> didnt match : return access and refresh token
+  //send cookie
+
+  const { username, email, password } = req.body;
+
+  if (!username || !password) {
+    throw new ApiError(400, "username or password is required");
+  }
+
+  const user = await User.findOne({ $or: [{ username, email }] });
+
+  if (!user) {
+    throw new ApiError(404, "User does not exists");
+  }
+
+  const isPasswordValid = await user.isPasswordCorrect(password);
+
+  if (!isPasswordValid) {
+    throw new ApiError(401, "Invalid user credentials");
+  }
+
+  const { accessToken, refreshToken } = await genrateAccessAndRefreshTokens(
+    user._id
+  );
+  const loggedUser = await User.findById(user._id).select(
+    "-password -refreshToken"
+  );
+
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+
+  return res
+    .status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+      new ApiResponse(
+        200,
+        {
+          user: loggedUser,
+          accessToken,
+          refreshToken,
+        },
+        "User logged in successfully"
+      )
+    );
+});
+
+const logoutUser = asyncHandler(async, (req, res) => {
+  //take data from body
+  //unset the refresh and access token
+});
+
+export { registerUser, loginUser };
