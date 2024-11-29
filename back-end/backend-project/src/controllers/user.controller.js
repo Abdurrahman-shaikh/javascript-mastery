@@ -269,10 +269,14 @@ const updateUser = asyncHandler(async (req, res) => {
 const updateUserAvatar = asyncHandler(async (req, res) => {
   const avatarLocalPath = req.file?.path;
 
-  if (avatarLocalPath) throw new ApiError(400, "Something went wrong");
+  if (!avatarLocalPath) throw new ApiError(400, "Something went wrong");
 
   const avatar = await uploadOnCloudinary(avatarLocalPath);
   if (!avatar.url) throw new ApiError(400, "error while uploading the avatar");
+
+  await fs.unlink(avatarLocalPath).catch((error) => {
+    throw new ApiError(400, "Error while removing the avatar from local path");
+  });
 
   const user = await User.findByIdAndUpdate(
     req.user?._id,
@@ -295,9 +299,16 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
   if (!coverImageLocalPath)
     throw new ApiError(400, "error while updating the cover image");
 
-  const coverImage = uploadOnCloudinary(coverImageLocalPath);
+  const coverImage = await uploadOnCloudinary(coverImageLocalPath);
   if (!coverImage)
     throw new ApiError(400, "error while updating the cover image");
+
+  await fs.unlink(coverImageLocalPath).catch((error) => {
+    throw new ApiError(
+      400,
+      "Error while removing the cover image local path from local path"
+    );
+  });
 
   const user = await User.findByIdAndUpdate(
     req.user?._id,
